@@ -31,7 +31,16 @@ func (bc *Blockchain) LoadFromFile(filename string) {
 		panic(err)
 	}
 
-	bc.Blocks = blocks
+	// Calculate the merkle root and transaction proof map for each block
+	updatedBlocks := []Block{}
+	for _, block := range blocks {
+		merkleRoot, proofMap := block.Txs.MerkleRoot()
+		block.Header.MerkleRoot = merkleRoot
+		block.ProofMap = proofMap
+		updatedBlocks = append(updatedBlocks, block)
+	}
+
+	bc.Blocks = updatedBlocks
 }
 
 func (bc *Blockchain) WriteToFile(filename string) {
@@ -58,12 +67,15 @@ func (bc *Blockchain) Time() int {
 }
 
 func (bc *Blockchain) NewBlock(txs Transactions) Block {
+	// Calculate the Merkle root and the proof map
+	merkleRoot, proofMap := txs.MerkleRoot()
+
 	// Create the header
 	blockHeader := BlockHeader{
 		Height:            bc.PreviousBlock().Header.Height + 1,
 		PreviousBlockHash: bc.PreviousBlock().Header.Hash,
 		Timestamp:         bc.Time(),
-		MerkleRoot:        txs.MerkleRoot(),
+		MerkleRoot:        merkleRoot,
 		TransactionsCount: len(txs),
 		Miner:             bc.Miner,
 		Nonce:             0,
@@ -82,8 +94,9 @@ func (bc *Blockchain) NewBlock(txs Transactions) Block {
 	}
 
 	newBlock := Block{
-		Header: blockHeader,
-		Txs:    txs,
+		Header:   blockHeader,
+		Txs:      txs,
+		ProofMap: proofMap,
 	}
 
 	bc.Blocks = append(bc.Blocks, newBlock)

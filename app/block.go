@@ -8,8 +8,31 @@ import (
 )
 
 type Block struct {
-	Header BlockHeader   `json:"header"`
-	Txs    []Transaction `json:"transactions"`
+	Header   BlockHeader  `json:"header"`
+	Txs      Transactions `json:"transactions"`
+	ProofMap map[string]string
+}
+
+func (b Block) ProveIncludesTxHash(txHash string) (bool, []string) {
+	// Check if the proof map contains an entry for the transcation hash
+	sibling, exists := b.ProofMap[txHash]
+	if !exists {
+		// Compare the hash to the merkle
+		return txHash == b.Header.MerkleRoot, []string{txHash}
+	}
+
+	// Hash the sibling and
+	hash := sha256.New()
+	if txHash < sibling {
+		hash.Write([]byte(txHash + sibling))
+	} else {
+		hash.Write([]byte(sibling + txHash))
+	}
+
+	nextHash := "0x" + hex.EncodeToString(hash.Sum(nil))
+
+	valid, proofHashes := b.ProveIncludesTxHash(nextHash)
+	return valid, append(proofHashes, sibling)
 }
 
 type BlockHeader struct {

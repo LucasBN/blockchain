@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"os"
 )
 
@@ -47,7 +50,8 @@ func main() {
 		}
 
 		for i := 0; i < *nBlocks; i++ {
-			blockchain.NewBlock(mempool.Transactions.TopN(100))
+			txs := mempool.Transactions.TopN(100, blockchain.Time())
+			blockchain.NewBlock(txs)
 		}
 
 		blockchain.WriteToFile(*blockchainOutput)
@@ -70,6 +74,69 @@ func main() {
 		}
 
 		fmt.Println(blockchain.Blocks[*block].Txs[*tx].Serialise())
+	case "generate-proof":
+		generateProofCmd := flag.NewFlagSet("generate-proof", flag.ExitOnError)
+		block := generateProofCmd.Int("block", -1, "Block number")
+		txHash := generateProofCmd.String("tx-hash", "", "Transaction hash")
+		outputFile := generateProofCmd.String("o", "", "Output file")
+
+		// Parse the subcommand-specific flags
+		if err := generateProofCmd.Parse(flag.Args()); err != nil {
+			fmt.Println("Error parsing get-tx-hash command:", err)
+			os.Exit(1)
+		}
+
+		valid, proofHashes := blockchain.Blocks[*block].ProveIncludesTxHash(*txHash)
+		if !valid {
+			fmt.Println("Invalid proof: the transaction is not included in this block")
+			os.Exit(1)
+		}
+
+		proof := Proof{
+			TransactionHash: *txHash,
+			MerkleRoot:      proofHashes[0],
+			ProofHashes:     proofHashes[1:],
+		}
+
+		jsonData, err := json.MarshalIndent(proof, "", "  ") // Pretty print JSON
+		if err != nil {
+			log.Fatalf("Error marshaling to JSON: %v", err)
+		}
+
+		err = os.WriteFile(*outputFile, jsonData, 0644)
+		if err != nil {
+			log.Fatalf("Error writing JSON to file: %v", err)
+		}
+	case "verify-proof":
+		verifyProofCmd := flag.NewFlagSet("generate-proof", flag.ExitOnError)
+		proofFile := verifyProofCmd.String("f", "", "Proof file")
+
+		// Parse the subcommand-specific flags
+		if err := verifyProofCmd.Parse(flag.Args()); err != nil {
+			fmt.Println("Error parsing get-tx-hash command:", err)
+			os.Exit(1)
+		}
+
+		file, err := os.Open(*proofFile)
+		if err != nil {
+			log.Fatalf("Error opening file: %v", err)
+		}
+		defer file.Close()
+
+		// Read the file contents
+		byteValue, err := io.ReadAll(file)
+		if err != nil {
+			log.Fatalf("Error reading file: %v", err)
+		}
+
+		// Unmarshal the JSON into the Proof struct
+		var proof Proof
+		err = json.Unmarshal(byteValue, &proof)
+		if err != nil {
+			log.Fatalf("Error unmarshaling JSON: %v", err)
+		}
+
+		fmt.Println(proof.Verify())
 	default:
 		fmt.Println("Error: Unknown command", *command)
 		flag.Usage()
